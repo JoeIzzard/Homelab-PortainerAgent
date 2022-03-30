@@ -1,0 +1,132 @@
+version: "3.8"
+
+x-netbox: &netbox
+  image: netboxcommunity/netbox:latest-ldap
+  restart: unless-stopped
+  user: 'unit:root'
+  environment:
+    - CORS_ORIGIN_ALLOW_ALL=True
+    - DB_HOST=r-dc-netboxdb-1
+    - DB_NAME=netbox
+    - DB_PASSWORD=${DB_PASS}
+    - DB_USER=ntlighting
+    - GRAPHQL_ENABLED=true
+    - HOUSEKEEPING_INTERVAL=86400
+    - MAX_PAGE_SIZE=1000
+    - MEDIA_ROOT=/opt/netbox/netbox/media
+    - METRICS_ENABLED=false
+    - NAPALM_PASSWORD=
+    - NAPALM_TIMEOUT=10
+    - NAPALM_USERNAME=
+    - REDIS_CACHE_DATABASE=1
+    - REDIS_CACHE_HOST=redis-cache
+    - REDIS_CACHE_INSECURE_SKIP_TLS_VERIFY=false
+    - REDIS_CACHE_PASSWORD=${REDIS_CACHE_PASS}
+    - REDIS_CACHE_SSL=false
+    - REDIS_DATABASE=0
+    - REDIS_HOST=redis
+    - REDIS_INSECURE_SKIP_TLS_VERIFY=false
+    - REDIS_PASSWORD=${REDIS_PASS}
+    - REDIS_SSL=false
+    - RELEASE_CHECK_URL=https://api.github.com/repos/netbox-community/netbox/releases
+    - SECRET_KEY=${SECRET_KEY}
+    - SKIP_STARTUP_SCRIPTS=false
+    - WEBHOOKS_ENABLED=true
+    - REMOTE_AUTH_ENABLED=True
+    - REMOTE_AUTH_BACKEND=netbox.authentication.LDAPBackend
+    - AUTH_LDAP_SERVER_URI=ldap://ldap.jumpcloud.com:389
+    - AUTH_LDAP_BIND_DN=uid=${LDAP_BINDING_USER},ou=Users,o=${JC_ORGID},dc=jumpcloud,dc=com
+    - AUTH_LDAP_USER_SEARCH_BASEDN=ou=Users,o=${JC_ORGID},dc=jumpcloud,dc=com
+    - AUTH_LDAP_GROUP_SEARCH_BASEDN=ou=Users,o=${JC_ORGID},dc=jumpcloud,dc=com
+    - AUTH_LDAP_BIND_PASSWORD=${LDAP_BIND_PASS}
+    - AUTH_LDAP_IS_SUPERUSER_DN=cn=admins,ou=Users,o=${JC_ORGID},dc=jumpcloud,dc=com
+    - AUTH_LDAP_USER_SEARCH_ATTR=uid
+    - AUTH_LDAP_GROUP_SEARCH_CLASS=groupOfUniqueNames
+    - AUTH_LDAP_GROUP_TYPE=GroupOfUniqueNamesType
+    - AUTH_LDAP_ATTR_LASTNAME=sn
+    - AUTH_LDAP_ATTR_FIRSTNAME=givenName
+  volumes:
+    - media:/opt/netbox/netbpx/media:z
+
+services:
+  netbox:
+    <<: *netbox
+    container_name: r-dc-netbox-1
+    hostname: r-dc-netbox-1
+    networks:
+      - proxy
+      - internal
+      - ldap_edge
+
+  netbox-worker:
+    <<: *netbox
+    container_name: r-dc-netboxwrk-1
+    hostname: r-dc-netboxwrk-1
+    command:
+      - /opt/netbox/venv/bin/python
+      - /opt/netbox/netbox/manage.py
+      - rqworker
+    networks:
+      - internal
+
+  netbox-housekeeping:
+    <<: *netbox
+    container_name: r-dc-netboxhouse-1
+    hostname: r-dc-netboxhouse-1
+    command:
+      - /opt/netbox/housekeeping.sh
+    networks:
+      - internal
+
+  postgress:
+    container_name: r-dc-netboxdb-1
+    hostname: r-dc-netboxdb-1
+    image: postgres:14-alpine
+    environment:
+      - POSTGRES_DB=netbox
+      - POSTGRES_PASSWORD=${DB_PASS}
+      - POSTGRES_USER=ntlighting
+    networks:
+      - internal
+
+  redis:
+    container_name: r-dc-netboxredis-1
+    hostname: r-dc-netboxredis-1
+    image: redis:6-alpine
+    command:
+      - sh
+      - -c
+      - redis-server --appendonly yes --requirepass $$REDIS_PASSWORD
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASS}
+    volumes:
+      - redis:/data
+    networks:
+      - internal
+
+  redis-cache:
+    container_name: r-dc-netboxcache-1
+    hostname: r-dc-rediscache-1
+    image: redis:6-alpine
+    command:
+      - sh
+      - -c
+      - redis-server --requirepass $$REDIS_PASSWORD
+    environment:
+      - REDIS_PASSWORD=${REDIS_CACHE_PASS}
+    networks:
+      - internal
+
+  
+volumes:
+  media:
+  database:
+  redis:
+
+networks:
+  proxy:
+    external: true
+  ldap_edge:
+    external: true
+  internal:
+    internal: true
